@@ -1,19 +1,19 @@
+package com.example.pingme.Reminder
+
+import android.content.Context
+import android.os.Build
+import android.util.Log
+import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.EaseInOutSine
-import androidx.compose.animation.core.EaseOutBack
-import androidx.compose.animation.core.EaseOutCubic
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,23 +27,30 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,105 +64,137 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.auth0.android.jwt.JWT
+import com.example.pingme.Auth.loginInterface
+import com.example.pingme.TokenSaving.AuthInterceptor
+import com.example.pingme.TokenSaving.TokenManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.converter.scalars.ScalarsConverterFactory
+import retrofit2.http.Body
+import retrofit2.http.POST
+import retrofit2.http.PUT
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+
+
+
+data class ReminderClass(
+    var title : String ="",
+    var description : String ="",
+    var date : Date = Date(),
+    var priority : String=""
+)
+
+
+interface ReminderInterface {
+    @PUT("/reminderManagement/{username}")
+    suspend fun remind(
+        @retrofit2.http.Path("username") username: String,
+        @Body reminderData:ReminderClass
+    ): ReminderClass
+}
+
+object RetrofitLoginClient{
+    private const val BASE_URL = "http://172.22.43.225:8080"
+
+    fun getApiService(context: Context): ReminderInterface {
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor(context))
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(ReminderInterface::class.java)
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ReminderScreen() {
-    // States for the input fields
+fun ReminderScreen(
+
+) {
+    // States for form fields
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(Date()) }
-    var priority by remember { mutableStateOf("Low") }
-    var showPriorityDropdown by remember { mutableStateOf(false) }
+    var priority by remember { mutableStateOf("Medium") }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var formattedDate by remember { mutableStateOf(formatDate(LocalDate.now())) }
+    val coroutineScope = rememberCoroutineScope()
+    var isLoading = remember{ mutableStateOf(false) }
+    // States for dropdowns
+    var isPriorityExpanded by remember { mutableStateOf(false) }
+    val priorityOptions = listOf("Low", "Medium", "High")
+
+    // Calendar dialog state
+    var showCalendarDialog by remember { mutableStateOf(false) }
 
     // Animation states
     var isAnimationComplete by remember { mutableStateOf(false) }
-    var isFormVisible by remember { mutableStateOf(false) }
-    val formScale = remember { Animatable(0.95f) }
-    val formAlpha = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
 
-    // Date formatter
-    val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-
-    // Animated floating bubbles
-    val bubbleAnimations = List(6) { index ->
-        remember { Animatable(initialValue = 0f) }
-    }
-
-    // Start animations
-    LaunchedEffect(Unit) {
+    LaunchedEffect(key1 = Unit) {
         delay(100)
         isAnimationComplete = true
-
-        delay(300)
-        isFormVisible = true
-
-        formScale.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(500, easing = EaseOutBack)
-        )
-
-        formAlpha.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(500)
-        )
-
-        // Animate floating bubbles
-        bubbleAnimations.forEachIndexed { index, animatable ->
-            launch {
-                delay(index * 50L)
-                animatable.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(800, easing = EaseInOutSine)
-                )
-
-                while (true) {
-                    animatable.animateTo(
-                        targetValue = 0.9f,
-                        animationSpec = tween(2000, easing = EaseInOutSine)
-                    )
-                    animatable.animateTo(
-                        targetValue = 1.1f,
-                        animationSpec = tween(2000, easing = EaseInOutSine)
-                    )
-                }
-            }
-        }
     }
 
-    // Date picker state
-    var showDatePicker by remember { mutableStateOf(false) }
+    val backgroundScale by animateFloatAsState(
+        targetValue = if (isAnimationComplete) 1f else 1.1f,
+        animationSpec = tween(1000, easing = FastOutSlowInEasing),
+        label = "backgroundScale"
+    )
 
-    // Success animation
-    var showSuccessAnimation by remember { mutableStateOf(false) }
+    val backgroundAlpha by animateFloatAsState(
+        targetValue = if (isAnimationComplete) 1f else 0.6f,
+        animationSpec = tween(1200),
+        label = "backgroundAlpha"
+    )
+
+    // Calendar dialog
+    if (showCalendarDialog) {
+        CustomCalendarDialog(
+            selectedDate = selectedDate,
+            onDateSelected = { date ->
+                selectedDate = date
+                formattedDate = formatDate(date)
+                showCalendarDialog = false
+            },
+            onDismiss = { showCalendarDialog = false }
+        )
+    }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = Modifier.fillMaxSize()
     ) {
-        // Background with gradient and animated elements
+        // Background
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .scale(if (isAnimationComplete) 1f else 1.1f)
-                .alpha(if (isAnimationComplete) 1f else 0.6f)
+                .scale(backgroundScale)
+                .alpha(backgroundAlpha)
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
@@ -166,28 +205,60 @@ fun ReminderScreen() {
                     )
                 )
         ) {
-            // Background canvas with animations
+            // Decorative elements
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Additional decorative elements could be drawn here
+                // Abstract wave pattern
+                val path = Path()
+                val width = size.width
+                val height = size.height
+
+                path.moveTo(0f, height * 0.3f)
+
+                for (i in 0..3) {
+                    val x1 = width * 0.25f * i
+                    val y1 = height * (0.2f + 0.05f * i)
+                    val x2 = width * (0.25f * i + 0.125f)
+                    val y2 = height * (0.35f - 0.05f * i)
+                    val x3 = width * (0.25f * i + 0.25f)
+                    val y3 = height * (0.3f + 0.05f * i)
+
+                    path.cubicTo(
+                        x1, y1,
+                        x2, y2,
+                        x3, y3
+                    )
+                }
+
+                // More abstract points
+                (0..20).forEach { i ->
+                    val x = (i * 50f) % width
+                    val y = (i * 40f) % height
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.05f),
+                        radius = 20f + (i % 5) * 10f,
+                        center = Offset(x, y)
+                    )
+                }
             }
 
-            // Animated floating bubbles
-            (0..5).forEach { index ->
+            // Floating circles with blur effect
+            (1..6).forEach { index ->
                 val offsetX = when(index % 3) {
                     0 -> -100.dp
                     1 -> 150.dp
                     else -> 300.dp
                 }
+
                 val offsetY = when(index % 2) {
                     0 -> (100 + index * 100).dp
                     else -> (200 + index * 80).dp
                 }
+
                 val size = (100 + (index % 3) * 50).dp
-                val animationValue = bubbleAnimations[index].value
 
                 Box(
                     modifier = Modifier
-                        .size(size * animationValue)
+                        .size(size)
                         .offset(offsetX, offsetY)
                         .alpha(0.4f)
                         .blur(20.dp)
@@ -204,373 +275,527 @@ fun ReminderScreen() {
             }
         }
 
-        // Reminder form content
-        AnimatedVisibility(
-            visible = isFormVisible,
-            enter = fadeIn(animationSpec = tween(500)) + expandVertically(
-                animationSpec = tween(500, easing = EaseOutCubic)
-            )
+        // Main content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Header
-                Text(
-                    text = "Set Reminder",
-                    color = Color.White,
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 32.dp)
+            AnimatedVisibility(
+                visible = isAnimationComplete,
+                enter = fadeIn(tween(1000)) + slideInVertically(
+                    initialOffsetY = { -100 },
+                    animationSpec = tween(1000)
                 )
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Header
+                    Text(
+                        text = "Set Reminder",
+                        color = Color.White,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    )
+                }
+            }
 
-                // Form card
-                Card(
+            AnimatedVisibility(
+                visible = isAnimationComplete,
+                enter = fadeIn(tween(1000, 300)) + slideInVertically(
+                    initialOffsetY = { 100 },
+                    animationSpec = tween(1000, 300)
+                )
+            ) {
+                // Card with glass effect
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .scale(formScale.value)
-                        .alpha(formAlpha.value)
-                        .shadow(
-                            elevation = 12.dp,
-                            shape = RoundedCornerShape(16.dp)
-                        ),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.White.copy(alpha = 0.9f)
-                    )
+                        .padding(bottom = 24.dp),
+                    color = Color.White.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(24.dp)
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.2f),
+                                        Color.White.copy(alpha = 0.05f)
+                                    )
+                                )
+                            )
                     ) {
-                        // Title field
-                        OutlinedTextField(
-                            value = title,
-                            onValueChange = { title = it },
-                            label = { Text("Title") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF1488CC),
-                                unfocusedBorderColor = Color(0xFF1488CC).copy(alpha = 0.5f),
-                                focusedLabelColor = Color(0xFF1488CC),
-                                cursorColor = Color(0xFF1488CC)
-                            )
-                        )
-
-                        // Description field
-                        OutlinedTextField(
-                            value = description,
-                            onValueChange = { description = it },
-                            label = { Text("Description") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            minLines = 3,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF1488CC),
-                                unfocusedBorderColor = Color(0xFF1488CC).copy(alpha = 0.5f),
-                                focusedLabelColor = Color(0xFF1488CC),
-                                cursorColor = Color(0xFF1488CC)
-                            )
-                        )
-
-                        // Date field
-                        OutlinedTextField(
-                            value = dateFormatter.format(date),
-                            onValueChange = { },
-                            label = { Text("Date") },
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showDatePicker = true },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF1488CC),
-                                unfocusedBorderColor = Color(0xFF1488CC).copy(alpha = 0.5f),
-                                focusedLabelColor = Color(0xFF1488CC),
-                                cursorColor = Color(0xFF1488CC)
-                            ),
-                            readOnly = true,
-                            trailingIcon = {
-                                Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Default.DateRange,
-                                    contentDescription = "Select Date",
-                                    tint = Color(0xFF1488CC)
-                                )
-                            }
-                        )
-
-                        // Priority field
-                        Box(
-                            modifier = Modifier.fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(20.dp)
                         ) {
+                            // Title field
                             OutlinedTextField(
-                                value = priority,
+                                value = title,
+                                onValueChange = { title = it },
+                                label = { Text("Title") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Title,
+                                        contentDescription = "Title",
+                                        tint = Color.White.copy(alpha = 0.8f)
+                                    )
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color.White,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
+                                    focusedLabelColor = Color.White,
+                                    unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
+                                    cursorColor = Color.White,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+                                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f)
+                                ),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    imeAction = ImeAction.Next
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Description field
+                            OutlinedTextField(
+                                value = description,
+                                onValueChange = { description = it },
+                                label = { Text("Description") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Description,
+                                        contentDescription = "Description",
+                                        tint = Color.White.copy(alpha = 0.8f)
+                                    )
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color.White,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
+                                    focusedLabelColor = Color.White,
+                                    unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
+                                    cursorColor = Color.White,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+                                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f)
+                                ),
+                                minLines = 3,
+                                maxLines = 5,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Priority dropdown
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = priority,
+                                    onValueChange = { },
+                                    readOnly = true,
+                                    label = { Text("Priority") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Flag,
+                                            contentDescription = "Priority",
+                                            tint = when(priority) {
+                                                "Low" -> Color(0xFF4CAF50)
+                                                "High" -> Color(0xFFF44336)
+                                                else -> Color(0xFFFF9800)
+                                            }
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        IconButton(onClick = { isPriorityExpanded = !isPriorityExpanded }) {
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDropDown,
+                                                contentDescription = "Show priorities",
+                                                tint = Color.White.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                    },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color.White,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
+                                        focusedLabelColor = Color.White,
+                                        unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
+                                        cursorColor = Color.White,
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+                                        focusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                        unfocusedContainerColor = Color.White.copy(alpha = 0.05f)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { isPriorityExpanded = !isPriorityExpanded }
+                                )
+
+                                DropdownMenu(
+                                    expanded = isPriorityExpanded,
+                                    onDismissRequest = { isPriorityExpanded = false },
+                                    modifier = Modifier
+                                        .width(200.dp)
+                                        .background(
+                                            Color(0xFF1A2151).copy(alpha = 0.95f)
+                                        )
+                                ) {
+                                    priorityOptions.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Flag,
+                                                        contentDescription = option,
+                                                        tint = when(option) {
+                                                            "Low" -> Color(0xFF4CAF50)
+                                                            "High" -> Color(0xFFF44336)
+                                                            else -> Color(0xFFFF9800)
+                                                        },
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = option,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                priority = option
+                                                isPriorityExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Date picker field
+                            OutlinedTextField(
+                                value = formattedDate,
                                 onValueChange = { },
-                                label = { Text("Priority") },
+                                readOnly = true,
+                                label = { Text("Due Date") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarMonth,
+                                        contentDescription = "Calendar",
+                                        tint = Color.White.copy(alpha = 0.8f)
+                                    )
+                                },
+                                trailingIcon = {
+                                    IconButton(onClick = { showCalendarDialog = true }) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarMonth,
+                                            contentDescription = "Open Calendar",
+                                            tint = Color.White.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color.White,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
+                                    focusedLabelColor = Color.White,
+                                    unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
+                                    cursorColor = Color.White,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+                                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f)
+                                ),
+                                shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { showPriorityDropdown = true },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFF1488CC),
-                                    unfocusedBorderColor = Color(0xFF1488CC).copy(alpha = 0.5f),
-                                    focusedLabelColor = Color(0xFF1488CC),
-                                    cursorColor = Color(0xFF1488CC)
+                                    .clickable { showCalendarDialog = true }
+                            )
+                            val context = LocalContext.current
+                            // Save button with gradient
+                            Button(
+                                onClick = {
+                                    when{
+                                        title.isEmpty() || description.isEmpty() || formattedDate.isEmpty() || priority.isEmpty()->{
+                                            Toast.makeText(context,"All fields are cumpulsary",Toast.LENGTH_LONG).show()
+                                        }
+                                        else->{
+                                            isLoading.value = true
+                                            coroutineScope.launch {
+                                                try{
+                                                    val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+                                                    val parsedDate: Date = dateFormat.parse(formattedDate)
+                                                        ?: throw IllegalArgumentException("Invalid date")
+                                                    val reminderData = ReminderClass(
+                                                        title = title,
+                                                        description = description,
+                                                        date = parsedDate,
+                                                        priority = priority
+                                                    )
+
+                                                    val apiService = RetrofitLoginClient.getApiService(context)
+
+                                                    val token = TokenManager.getToken(context) ?: return@launch
+                                                    var username = extractUsernameFromToken(token)
+                                                    val response = apiService.remind(
+                                                        username = username.toString(),
+                                                        reminderData = reminderData
+                                                    )
+
+                                                    Log.d("ReminderScreen","Successfully entered data")
+
+                                                    Toast.makeText(context,"Reminder is set", Toast.LENGTH_LONG).show()
+
+                                                }catch(e:Exception){
+                                                    Log.e("ReminderScreen","There was an error sending data",e)
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.Transparent
                                 ),
-                                readOnly = true,
-                                trailingIcon = {
-                                    Icon(
-                                        imageVector = androidx.compose.material.icons.Icons.Default.ArrowDropDown,
-                                        contentDescription = "Select Priority",
-                                        tint = Color(0xFF1488CC)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            brush = Brush.horizontalGradient(
+                                                colors = listOf(
+                                                    Color(0xFF4776E6),
+                                                    Color(0xFF8E54E9)
+                                                )
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Save Reminder",
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-                            )
-
-                            DropdownMenu(
-                                expanded = showPriorityDropdown,
-                                onDismissRequest = { showPriorityDropdown = false },
-                                modifier = Modifier
-                                    .width(with(LocalDensity.current) {
-                                        (300.dp).toPx().toInt().toDp()
-                                    })
-                                    .background(Color.White)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Low") },
-                                    onClick = {
-                                        priority = "Low"
-                                        showPriorityDropdown = false
-                                    },
-                                    leadingIcon = {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(12.dp)
-                                                .background(Color(0xFF4CAF50), CircleShape)
-                                        )
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    text = { Text("High") },
-                                    onClick = {
-                                        priority = "High"
-                                        showPriorityDropdown = false
-                                    },
-                                    leadingIcon = {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(12.dp)
-                                                .background(Color(0xFFF44336), CircleShape)
-                                        )
-                                    }
-                                )
                             }
-                        }
-
-                        // Submit button
-                        Button(
-                            onClick = {
-                                // Show success animation
-                                showSuccessAnimation = true
-                                scope.launch {
-                                    delay(2000)
-                                    showSuccessAnimation = false
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .padding(top = 8.dp),
-                            shape = RoundedCornerShape(28.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2B32B2)
-                            )
-                        ) {
-                            Text(
-                                "Set Reminder",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
                     }
                 }
             }
         }
-
-        // Date picker dialog
-        if (showDatePicker) {
-            DatePickerDialog(
-                onDismissRequest = { showDatePicker = false },
-                onDateSelected = { selectedDate ->
-                    date = selectedDate
-                    showDatePicker = false
-                }
-            )
-        }
-
-        // Success animation
-        AnimatedVisibility(
-            visible = showSuccessAnimation,
-            enter = fadeIn(animationSpec = tween(300))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.7f)),
-                contentAlignment = Alignment.Center
-            ) {
-                SuccessAnimation()
-            }
-        }
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun DatePickerDialog(
-    onDismissRequest: () -> Unit,
-    onDateSelected: (Date) -> Unit
+fun CustomCalendarDialog(
+    selectedDate: LocalDate,
+    onDateSelected: (LocalDate) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    val calendar = Calendar.getInstance()
-    Dialog(onDismissRequest = onDismissRequest) {
+    var currentMonth by remember { mutableStateOf(YearMonth.from(selectedDate)) }
+    var selectedLocalDate by remember { mutableStateOf(selectedDate) }
+
+    Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .wrapContentSize(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF1A2151)
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 6.dp
+            )
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(16.dp)
             ) {
-                Text(
-                    text = "Select Date",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2B32B2)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Simple date selector (in a real app you would use DatePicker)
+                // Calendar header
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            currentMonth = currentMonth.minusMonths(1)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowLeft,
+                            contentDescription = "Previous Month",
+                            tint = Color.White
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault()),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = currentMonth.year.toString(),
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 16.sp
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            currentMonth = currentMonth.plusMonths(1)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Next Month",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                // Days header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Day
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Day", fontSize = 14.sp, color = Color.Gray)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    calendar.add(Calendar.DAY_OF_MONTH, -1)
-                                }
-                            ) {
-                                Text("-", fontSize = 24.sp, color = Color(0xFF2B32B2))
-                            }
-
-                            Text(
-                                text = calendar.get(Calendar.DAY_OF_MONTH).toString(),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = {
-                                    calendar.add(Calendar.DAY_OF_MONTH, 1)
-                                }
-                            ) {
-                                Text("+", fontSize = 24.sp, color = Color(0xFF2B32B2))
-                            }
-                        }
+                    for (day in DayOfWeek.values()) {
+                        Text(
+                            text = day.getDisplayName(TextStyle.SHORT, Locale.getDefault()).take(1),
+                            modifier = Modifier.weight(1f),
+                            color = Color.White.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
+                }
 
-                    // Month
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Month", fontSize = 14.sp, color = Color.Gray)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    calendar.add(Calendar.MONTH, -1)
+                // Calendar grid
+                val firstDayOfMonth = currentMonth.atDay(1)
+                val lastDayOfMonth = currentMonth.atEndOfMonth()
+                val firstDayOfWeek = firstDayOfMonth.dayOfWeek.value % 7
+
+                val daysInMonth = (1..lastDayOfMonth.dayOfMonth).toList()
+                val calendarDays = List(firstDayOfWeek) { null } + daysInMonth
+
+                // Create rows for each week
+                for (weekIndex in 0 until (calendarDays.size + 6) / 7) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        for (dayIndex in 0 until 7) {
+                            val index = weekIndex * 7 + dayIndex
+                            if (index < calendarDays.size) {
+                                val day = calendarDays[index]
+                                if (day != null) {
+                                    val date = currentMonth.atDay(day)
+                                    val isSelected = date == selectedLocalDate
+                                    val isToday = date == LocalDate.now()
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                when {
+                                                    isSelected -> Color(0xFF8E54E9)
+                                                    isToday -> Color(0xFF4776E6).copy(alpha = 0.3f)
+                                                    else -> Color.Transparent
+                                                }
+                                            )
+                                            .border(
+                                                width = if (isToday && !isSelected) 1.dp else 0.dp,
+                                                color = if (isToday && !isSelected) Color(0xFF4776E6) else Color.Transparent,
+                                                shape = CircleShape
+                                            )
+                                            .clickable {
+                                                selectedLocalDate = date
+                                                onDateSelected(date)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = day.toString(),
+                                            color = when {
+                                                isSelected -> Color.White
+                                                else -> Color.White.copy(alpha = 0.8f)
+                                            },
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                } else {
+                                    // Empty space for days from previous/next month
+                                    Box(modifier = Modifier.size(32.dp))
                                 }
-                            ) {
-                                Text("-", fontSize = 24.sp, color = Color(0xFF2B32B2))
-                            }
-
-                            Text(
-                                text = (calendar.get(Calendar.MONTH) + 1).toString(),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = {
-                                    calendar.add(Calendar.MONTH, 1)
-                                }
-                            ) {
-                                Text("+", fontSize = 24.sp, color = Color(0xFF2B32B2))
-                            }
-                        }
-                    }
-
-                    // Year
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Year", fontSize = 14.sp, color = Color.Gray)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    calendar.add(Calendar.YEAR, -1)
-                                }
-                            ) {
-                                Text("-", fontSize = 24.sp, color = Color(0xFF2B32B2))
-                            }
-
-                            Text(
-                                text = calendar.get(Calendar.YEAR).toString(),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = {
-                                    calendar.add(Calendar.YEAR, 1)
-                                }
-                            ) {
-                                Text("+", fontSize = 24.sp, color = Color(0xFF2B32B2))
+                            } else {
+                                // Empty space for remaining cells
+                                Box(modifier = Modifier.size(32.dp))
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
+                // Buttons
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(
-                        onClick = onDismissRequest
+                    Button(
+                        onClick = {
+                            selectedLocalDate = LocalDate.now()
+                            onDateSelected(LocalDate.now())
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4776E6)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Cancel", color = Color.Gray)
+                        Text("Today")
                     }
 
-                    TextButton(
-                        onClick = {
-                            onDateSelected(calendar.time)
-                        }
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF8E54E9)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("OK", color = Color(0xFF2B32B2))
+                        Text("Cancel")
                     }
                 }
             }
@@ -578,76 +803,19 @@ fun DatePickerDialog(
     }
 }
 
-@Composable
-fun SuccessAnimation() {
-    val infiniteTransition = rememberInfiniteTransition(label = "success")
-    val rotationAnim = infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation"
-    )
+@RequiresApi(Build.VERSION_CODES.O)
+private fun formatDate(date: LocalDate): String {
+    val formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy")
+    return date.format(formatter)
+}
 
-    val scaleAnim = infiniteTransition.animateFloat(
-        initialValue = 0.7f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = EaseInOutCubic),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale"
-    )
-
-    Box(
-        modifier = Modifier
-            .size(200.dp)
-            .scale(scaleAnim.value)
-            .background(Color.White, CircleShape)
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(
-            modifier = Modifier
-                .size(100.dp)
-        ) {
-            rotate(rotationAnim.value) {
-                drawArc(
-                    color = Color(0xFF2B32B2),
-                    startAngle = 0f,
-                    sweepAngle = 270f,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 8.dp.toPx())
-                )
-            }
-
-            // Check mark
-            val checkPath = Path().apply {
-                moveTo(size.width * 0.3f, size.height * 0.5f)
-                lineTo(size.width * 0.45f, size.height * 0.7f)
-                lineTo(size.width * 0.7f, size.height * 0.3f)
-            }
-
-            drawPath(
-                path = checkPath,
-                color = Color(0xFF4CAF50),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 8.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-            )
-        }
-    }
-
-    // Add text below
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "Reminder Set!",
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
+fun extractUsernameFromToken(jwtToken: String): String? {
+    return try {
+        val jwt = JWT(jwtToken)
+        // Assumes the username is stored in the "sub" or "username" claim
+        jwt.getClaim("sub").asString() ?: jwt.getClaim("username").asString()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }

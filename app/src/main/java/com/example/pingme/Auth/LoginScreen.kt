@@ -1,6 +1,7 @@
 package com.example.pingme.Auth
 
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -54,6 +55,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,7 +64,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.auth0.android.jwt.JWT
 import com.example.pingme.R
+import com.example.pingme.TokenSaving.TokenManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import retrofit2.Retrofit
@@ -83,7 +87,7 @@ interface loginInterface{
 }
 
 object RetrofitLoginClient{
-    private const val BASE_URL = "http://172.22.78.106:8080"
+    private const val BASE_URL = "http://172.22.43.225:8080"
 
     val apiService: loginInterface by lazy {
         Retrofit.Builder()
@@ -97,7 +101,8 @@ object RetrofitLoginClient{
 
 @Composable
 fun LoginScreen(
-    goToSignUpScreen : ()->Unit
+    goToSignUpScreen : ()->Unit,
+    goToHomeScreen : ( username : String)->Unit,
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -375,6 +380,7 @@ fun LoginScreen(
 //                            Spacer(modifier = Modifier.height(4.dp))
 
                             // Login button with gradient
+                            val context = LocalContext.current
                             Button(
                                 onClick = {
                                     coroutineScope.launch {
@@ -387,9 +393,18 @@ fun LoginScreen(
 
                                             if (response == "failure") {
                                                 Log.d("Login", "Wrong Credentials")
+                                                Toast.makeText(context,"Wrong Credentials",Toast.LENGTH_LONG).show()
                                             } else {
                                                 authT = response // Store the JWT token
                                                 Log.d("Login", "Token: $authT")
+
+                                                TokenManager.saveToken(context, authT)
+                                                val username = extractUsernameFromToken(authT)
+                                                Toast.makeText(context,"Successfully Logged in",Toast.LENGTH_LONG).show()
+                                                if (username != null) {
+                                                    goToHomeScreen(username)
+                                                }
+
                                             }
                                         } catch (e: Exception) {
                                             Log.e("Login", "Error: ${e.message}")
@@ -460,5 +475,18 @@ fun LoginScreen(
                 }
             }
         }
+    }
+}
+
+
+
+fun extractUsernameFromToken(jwtToken: String): String? {
+    return try {
+        val jwt = JWT(jwtToken)
+        // Assumes the username is stored in the "sub" or "username" claim
+        jwt.getClaim("sub").asString() ?: jwt.getClaim("username").asString()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }

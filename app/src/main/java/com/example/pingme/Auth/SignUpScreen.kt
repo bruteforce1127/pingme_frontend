@@ -84,7 +84,7 @@ interface UserApiService {
 
 // Create a Retrofit instance
 object RetrofitSignUpClient {
-    private const val BASE_URL = "http://172.22.78.106:8080"
+    private const val BASE_URL = "http://172.22.43.225:8080"
 
     val apiService: UserApiService by lazy {
         Retrofit.Builder()
@@ -382,6 +382,9 @@ fun SignUpScreen(
                                             email = ""
                                             password = ""
                                             confirmPassword = ""
+
+                                            goToLoginScreen()
+
                                         } catch (e: Exception) {
                                             // Log and display error message
                                             Log.e("SignUpScreen", "Error during registration: ${e.message}")

@@ -87,5 +87,16 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.accompanist.navigation.animation)
 
+    implementation (libs.androidx.animation)
+
+    implementation (libs.material3)
+
+//    To get username from jwtToken
+
+    implementation (libs.jwtdecode)
+
+//    for jwt Token
+    implementation (libs.androidx.datastore.preferences)
+
 
 }
