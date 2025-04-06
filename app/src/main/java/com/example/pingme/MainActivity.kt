@@ -58,7 +58,9 @@ import com.example.pingme.Auth.LoginScreen
 import com.example.pingme.Auth.SignUpScreen
 import com.example.pingme.Auth.extractUsernameFromToken
 import com.example.pingme.Home.HomeScreen
-import com.example.pingme.Reminder.ReminderScreen
+import com.example.pingme.ReminderManagement.Reminder
+import com.example.pingme.ReminderManagement.ReminderHistoryScreen
+import com.example.pingme.ReminderManagement.ReminderScreen
 import com.example.pingme.TokenSaving.TokenManager
 import com.example.pingme.ui.theme.PingMeTheme
 import kotlinx.coroutines.delay
@@ -124,16 +126,37 @@ fun AppNavigation() {
                 goToSetReminderScreen = {
                     navController.navigate("ReminderScreen")
                 },
-                goToHistoryScreen = { /*TODO*/ },
+                goToHistoryScreen = { username->
+                    navController.navigate("history/$username")
+                },
                 goToInsightsScreen = { /*TODO*/ },
                 goToNotificationScreen = {},
+                goToSignUpScreen = {
+                    navController.navigate("signup")
+                },
                 username = username
             )
         }
         composable(
             route = "ReminderScreen"
         ) {
-            ReminderScreen()
+            ReminderScreen(
+                goToHomeScreen = { username->
+                    navController.navigate("homeScreen/$username")
+                }
+            )
+        }
+        composable(
+            route="history/{username}",
+            arguments = listOf(navArgument("username") { type = NavType.StringType })
+        ) { backStackEntry ->
+                val username = backStackEntry.arguments?.getString("username")?.let { Uri.decode(it) } ?: ""
+                ReminderHistoryScreen(
+                    username = username,
+                    goToSignUpScreen = {
+                        navController.navigate("homeScreen/$username")
+                    }
+                )
         }
     }
 }
@@ -307,3 +330,16 @@ fun SplashScreen(navController: NavController, context: Context) {
     }
 }
 
+
+//composable(
+//route"history",
+//arguments = listOf(navArgument("username") { type = NavType.StringType })
+//){  backStackEntry ->
+//    val username = backStackEntry.arguments?.getString("username")?.let { Uri.decode(it) } ?: ""
+//    ReminderHistoryScreen(
+//        username = username,
+//        goToSignUpScreen = {
+//            navController.navigate("homeScreen/$username")
+//        }
+//    )
+//}

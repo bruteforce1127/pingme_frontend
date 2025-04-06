@@ -3,40 +3,34 @@ package com.example.pingme.Auth
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,24 +42,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.auth0.android.jwt.JWT
-import com.example.pingme.R
 import com.example.pingme.TokenSaving.TokenManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -74,7 +66,6 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
-
 
 data class loginData(
     var username:String,
@@ -87,7 +78,7 @@ interface loginInterface{
 }
 
 object RetrofitLoginClient{
-    private const val BASE_URL = "http://172.22.43.225:8080"
+    private const val BASE_URL = "http://172.22.78.106:8080"
 
     val apiService: loginInterface by lazy {
         Retrofit.Builder()
@@ -101,288 +92,207 @@ object RetrofitLoginClient{
 
 @Composable
 fun LoginScreen(
-    goToSignUpScreen : ()->Unit,
+    goToSignUpScreen: () -> Unit,
     goToHomeScreen : ( username : String)->Unit,
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    val isPasswordVisible by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     var authT by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var isAnimationComplete by remember { mutableStateOf(false) }
+    // For animations
+    var isVisible by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Animation states
-    LaunchedEffect(key1 = Unit) {
+    // Start animation after a short delay
+    LaunchedEffect(Unit) {
         delay(100)
-        isAnimationComplete = true
+        isVisible = true
     }
 
-    val backgroundScale by animateFloatAsState(
-        targetValue = if (isAnimationComplete) 1f else 1.1f,
-        animationSpec = tween(1000, easing = FastOutSlowInEasing),
-        label = "backgroundScale"
+    // Define gradients
+    val primaryGradient = Brush.linearGradient(
+        colors = listOf(Color(0xFF4776E6), Color(0xFF8E54E9)),
+        start = Offset(0f, 0f),
+        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
     )
 
-    val backgroundAlpha by animateFloatAsState(
-        targetValue = if (isAnimationComplete) 1f else 0.6f,
-        animationSpec = tween(1200),
-        label = "backgroundAlpha"
+    val secondaryGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFFF5F7FA), Color(0xFFE4EBF5))
     )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(secondaryGradient)
     ) {
-        // Gorgeous background
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .scale(backgroundScale)
-                .alpha(backgroundAlpha)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF2B32B2),
-                            Color(0xFF1488CC),
-                            Color(0xFF2B32B2)
-                        )
-                    )
-                )
-        ) {
-            // Decorative elements
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // Abstract decorative shapes would be drawn here
-                // This is a placeholder for custom drawing
-            }
-
-            // Floating circles with blur effect
-            (1..6).forEach { index ->
-                val offsetX = when(index % 3) {
-                    0 -> -100.dp
-                    1 -> 150.dp
-                    else -> 300.dp
-                }
-
-                val offsetY = when(index % 2) {
-                    0 -> (100 + index * 100).dp
-                    else -> (200 + index * 80).dp
-                }
-
-                val size = (100 + (index % 3) * 50).dp
-
-                Box(
-                    modifier = Modifier
-                        .size(size)
-                        .offset(offsetX, offsetY)
-                        .alpha(0.4f)
-                        .blur(20.dp)
-                        .clip(CircleShape)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFF4E92F7),
-                                    Color(0xFF4E92F7).copy(alpha = 0.1f)
-                                )
-                            )
-                        )
-                )
-            }
-        }
-
         // Main content
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(24.dp)
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.height(80.dp))
+
+            // Animated app logo
             AnimatedVisibility(
-                visible = isAnimationComplete,
-                enter = fadeIn(tween(1000)) + slideInVertically(
-                    initialOffsetY = { -100 },
-                    animationSpec = tween(1000)
-                )
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1000)) +
+                        slideInVertically(animationSpec = tween(1000)) { it / 2 }
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Box(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .shadow(elevation = 20.dp, shape = CircleShape)
+                        .clip(CircleShape)
+                        .background(primaryGradient),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // App logo
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .padding(bottom = 24.dp)
-                            .clip(CircleShape)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.2f),
-                                        Color.White.copy(alpha = 0.1f)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.app),
-                            contentDescription = "App Logo",
-                            modifier = Modifier
-                                .size(80.dp)
-                                .padding(8.dp),
-                            contentScale = ContentScale.Fit
+                    Text(
+                        "PM",
+                        style = TextStyle(
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 48.sp
                         )
-                    }
-
-                    // App name
-                    Text(
-                        text = "Ping Me",
-                        color = Color.White,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    // Welcome text
-                    Text(
-                        text = "Welcome back",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(bottom = 40.dp)
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(50.dp))
+
+            // Animated title
             AnimatedVisibility(
-                visible = isAnimationComplete,
-                enter = fadeIn(tween(1000, 300)) + slideInVertically(
-                    initialOffsetY = { 100 },
-                    animationSpec = tween(1000, 300)
-                )
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1200)) +
+                        slideInVertically(animationSpec = tween(1200)) { it / 2 }
             ) {
-                // Card with glass effect
-                Surface(
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Welcome Back",
+                        style = TextStyle(
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF333333),
+                            letterSpacing = 0.5.sp
+                        )
+                    )
+                    Text(
+                        "Sign in to continue managing your reminders",
+                        style = TextStyle(
+                            fontSize = 16.sp,
+                            color = Color(0xFF696969),
+                            textAlign = TextAlign.Center
+                        ),
+                        modifier = Modifier.padding(top = 8.dp, bottom = 60.dp)
+                    )
+                }
+            }
+
+            // Username field
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1300)) +
+                        slideInVertically(animationSpec = tween(1300)) { it / 2 }
+            ) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = "Username") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 24.dp),
-                    color = Color.White.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF8E54E9),
+                        unfocusedBorderColor = Color.Black,
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    singleLine = true,
+                )
+            }
+
+            // Password field
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1400)) +
+                        slideInVertically(animationSpec = tween(1400)) { it / 2 }
+            ) {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Password") },
+                    visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF8E54E9),
+                        unfocusedBorderColor = Color.Black,
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    ),
+                    singleLine = true
+                )
+            }
+
+            // Forgot password
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1500))
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.CenterEnd
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.2f),
-                                        Color.White.copy(alpha = 0.05f)
-                                    )
-                                )
+                    TextButton(onClick = { /* Handle forgot password */ }) {
+                        Text(
+                            "Forgot Password?",
+                            style = TextStyle(
+                                fontSize = 14.sp,
+                                color = Color(0xFF8E54E9),
+                                fontWeight = FontWeight.Medium
                             )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(24.dp)
-                        ) {
-                            // Username field
-                            OutlinedTextField(
-                                value = username,
-                                onValueChange = { username = it },
-                                label = { Text("Username") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = "Username",
-                                        tint = Color.White.copy(alpha = 0.8f)
-                                    )
-                                },
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.White,
-                                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
-                                    focusedLabelColor = Color.White,
-                                    unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
-                                    cursorColor = Color.White,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White.copy(alpha = 0.9f),
-                                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
-                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f)
-                                ),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Next
-                                ),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                        )
+                    }
+                }
+            }
 
-                            // Password field
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = { Text("Password") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = "Password",
-                                        tint = Color.White.copy(alpha = 0.8f)
-                                    )
-                                },
-                                trailingIcon = {
-                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                        Icon(
-                                            imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = if (passwordVisible) "Hide Password" else "Show Password",
-                                            tint = Color.White.copy(alpha = 0.8f)
-                                        )
-                                    }
-                                },
-                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.White,
-                                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
-                                    focusedLabelColor = Color.White,
-                                    unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
-                                    cursorColor = Color.White,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White.copy(alpha = 0.9f),
-                                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
-                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f)
-                                ),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Done
-                                ),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+            Spacer(modifier = Modifier.height(16.dp))
 
-                            // Forgot password text
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                TextButton(
-                                    onClick = { /* Forgot password action */ },
-                                    colors = ButtonDefaults.textButtonColors(
-                                        contentColor = Color.White.copy(alpha = 0.9f)
-                                    )
-                                ) {
-                                    Text(
-                                        text = "Forgot Password?",
-                                        fontSize = 14.sp
-                                    )
-                                }
-                            }
+            AnimatedVisibility(visible = errorMessage != null) {
+                Text(
+                    text = errorMessage ?: "",
+                    color = Color(0xFFE53935),
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    style = TextStyle(fontSize = 14.sp)
+                )
+            }
 
-//                            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-                            // Login button with gradient
-                            val context = LocalContext.current
-                            Button(
-                                onClick = {
+            // Login button
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1600)) +
+                        slideInVertically(animationSpec = tween(1600)) { it / 2 }
+            ) {
+                Button(
+                    onClick = {
                                     coroutineScope.launch {
                                         try{
                                             val user = loginData(
@@ -411,73 +321,77 @@ fun LoginScreen(
                                         }
                                     }
                                 },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color.Transparent
-                                ),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            brush = Brush.horizontalGradient(
-                                                colors = listOf(
-                                                    Color(0xFF4776E6),
-                                                    Color(0xFF8E54E9)
-                                                )
-                                            )
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Log In",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    contentPadding = PaddingValues(0.dp),
+                    enabled = !isLoading
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(primaryGradient),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                "LOGIN",
+                                style = TextStyle(
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                            )
                         }
                     }
                 }
             }
 
+            Spacer(modifier = Modifier.height(50.dp))
+
+            // Sign up link
             AnimatedVisibility(
-                visible = isAnimationComplete,
-                enter = fadeIn(tween(1000, 600))
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(1800))
             ) {
-                // Don't have an account
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(top = 16.dp)
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Don't have an account? ",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 14.sp
+                        "Don't have an account?",
+                        style = TextStyle(
+                            fontSize = 14.sp,
+                            color = Color(0xFF696969)
+                        )
                     )
-
                     TextButton(onClick = {
                         goToSignUpScreen()
                     }) {
                         Text(
-                            text = "Sign Up",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
+                            "Sign Up",
+                            style = TextStyle(
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF8E54E9)
+                            )
                         )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
-
 
 
 fun extractUsernameFromToken(jwtToken: String): String? {

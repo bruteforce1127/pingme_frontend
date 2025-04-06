@@ -17,7 +17,11 @@ object TokenManager {
             prefs[TOKEN_KEY] = token
         }
     }
-
+    suspend fun deleteToken(context: Context){
+        context.dataStore.edit {prefs->
+            prefs.remove(TOKEN_KEY)
+        }
+    }
     suspend fun getToken(context: Context): String? {
         val prefs = context.dataStore.data.first()
         return prefs[TOKEN_KEY]
